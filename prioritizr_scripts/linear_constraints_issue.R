@@ -11,7 +11,7 @@ p <- problem(salt_pu, salt_features) %>%
   add_min_set_objective() %>%
   add_relative_targets(0.30) %>%
   add_binary_decisions() %>%
-  add_boundary_penalties(0.01) %>% 
+  #add_boundary_penalties(0.01) %>% 
   add_gurobi_solver(gap = 0, verbose = FALSE)
 
 sp <- solve(p)
@@ -29,7 +29,7 @@ p2 <- problem(salt_pu, salt_features) %>%
   add_min_set_objective() %>%
   add_relative_targets(0.30) %>%
   add_binary_decisions() %>%
-  add_boundary_penalties(0.01) %>% 
+  #add_boundary_penalties(0.01) %>% 
   add_linear_constraints(threshold = threshold_31,
                          sense = "<=", 
                          data = uniform_cost) %>% 
@@ -50,3 +50,14 @@ eval_n_summary(p2, sp2)$cost/number_of_planning_units(p2)
 #costs of solutions
 eval_cost_summary(p, sp)
 eval_cost_summary(p2, sp2)
+
+eval_feature_representation_summary(p, sp)
+eval_feature_representation_summary(p2, sp2)
+
+for (i in 1:nlayers(salt_features)) {
+  par(mfrow = c(1,2))
+  plot(salt_features[[i]]*sp)
+  plot(salt_features[[i]]*sp2)
+}
+
+plot(stack(sp*salt_pu, sp2*salt_pu), zlim = c(0, 1.4))
