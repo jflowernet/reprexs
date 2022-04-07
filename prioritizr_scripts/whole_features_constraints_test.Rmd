@@ -23,8 +23,8 @@ n_fish <- 4
 ```{r}
 # create a simple planning grid (assuming cost of each planning unit is equal)
 pu_raster <- raster(
-  nrows = 20, ncols = 20,
-  xmn = 0, xmx = 20, ymn = 0, ymx = 20, vals = 1
+  nrows = 200, ncols = 200,
+  xmn = 0, xmx = 200, ymn = 0, ymx = 200, vals = 1
 )
 ```
 ```{r}
@@ -40,8 +40,8 @@ plot(fish_stack)
 ```{r}
 # create sea mount data
 seamount_raster <-
-  st_multipoint(rbind(c(2, 2), c(8, 17), c(17, 5))) %>%
-  st_buffer(2) %>%
+  st_multipoint(rbind(c(20,50), c(45, 70), c(65, 90), c(100, 100), c(120, 150), c(30, 160), c(10, 20), c(15, 80), c(20, 180))) %>%
+  st_buffer(7) %>%
   as("Spatial") %>%
   rasterize(pu_raster, field = 1)
 ```
@@ -129,7 +129,7 @@ feature_data <-
   raster::cellStats(sum, na.rm = TRUE) %>%
   {tibble(id = seq_along(.), name = names(.), total = unname(.))} %>%
   ## set targets, let's use 20% as an example
-  mutate(rel_target = c(0.3,0.2,0.2,0.2,0.5)) %>%
+  mutate(rel_target = c(0.3,0.2,0.2,0.2,0.3)) %>%
   ## now compute the targets as absolute values
   ## (this is needed because we have spatial overlaps in the planning unit
   ## data, so if we gave prioritizr relative targets then it wouldn't
@@ -140,32 +140,79 @@ feature_data
 ```
 
 ```{r}
-# create a conservation planning problem
-## formulate problem with all the pu and feature data
-prob <-
-  problem(x = pu_data, features = feature_data$name, cost_column = "cost") %>%
-  add_min_set_objective() %>%
-  add_absolute_targets(feature_data$abs_target) %>%
-  add_binary_decisions() %>%
-  add_default_solver(gap = 0)
-```
-
-```{r}
 ## add in linear constraints to ensure that the solution won't select
 ## spatially overlapping grid-cell level and seamount-level planning units
+
+#loop for creating all the constraints
+all_constraints <- list()
+
 for (i in seq_len(nrow(pu_sm_data))) {
+  print(paste0("Processing seamount ", i, " of ", nrow(pu_sm_data)))
+  constraints_pu_list <- list()
   for (j in pu_sm_data$id[[i]]) {
+    
     ### specify planning unit indices for constraints
     v <- rep(0, nrow(pu_data))      # initialize with zeros
     v[nrow(pu_grid_data) + i] <- 1  # specify seamount-level planning unit
     v[j] <- 1                       # specify grid cell-level planning unit
-    ### add constraints to problem
-    prob <- add_linear_constraints(prob, threshold = 1, sense = "<=", data = v)
+    
+    #store the constraints vectors in a list
+    constraints_pu_list[[which(pu_sm_data$id[[i]] == j)]] <- v
   }
+  all_constraints[[i]] <- constraints_pu_list
 }
 
-#notes JF: This makes a constraint for each combination of seamount level planning unit and grid-cell level planning unit that overlaps with that seamount. The contraint says that the solution cannot have both representation of the seamount area in the seamount level planning unit AND the grid-cell level planning unit, i.e. you can't select both the seamount and then select grid-cells that overlap the seamount, only one or the other.
+#don't need a lists of lists, so unlist to get a single list
+constraints_list <- unlist(all_constraints, recursive = FALSE)
 
+#notes JF: This makes a constraint for each combination of seamount level planning unit and grid-cell level planning unit that overlaps with that seamount. The constraint says that the solution cannot have both representation of the seamount area in the seamount level planning unit AND the grid-cell level planning unit, i.e. you can't select both the seamount and then select grid-cells that overlap the seamount, only one or the other.
+
+```
+
+```{r}
+#add the constraints as features to the planning data
+
+pu_data_final <- constraints_list %>% 
+  as_tibble(.name_repair = "minimal") %>% 
+  setNames(sprintf("constraint_%d", seq.int(1:ncol(.)))) %>% 
+  bind_cols(pu_data, .)
+  
+pu_data_final
+
+```
+
+```{r}
+# add constraints features to feature data which contains targets
+feature_data_w_constraints <- sapply(constraints_list, sum) %>% 
+  {tibble(id = seq(from = length(feature_data)+1, to = (length(feature_data) + length(.)), by = 1), total = .)} %>% 
+  mutate(name = sprintf("constraint_%d", id-length(feature_data)), .after = id) %>% 
+  mutate(rel_target = NA_real_,
+         abs_target = 1) %>% 
+  bind_rows(feature_data, .)
+
+feature_data_w_constraints
+  
+```
+
+```{r}
+#create targets dataframe for manual targets
+manual_targets <- tibble(feature = feature_data_w_constraints$name,
+                         type = "absolute",
+                         sense = c(rep(">=", length(feature_data)), rep("<=", length(constraints_list))),
+                         target = c(pull(feature_data, abs_target), rep(1, length(constraints_list))))
+
+manual_targets
+```
+
+```{r}
+# create a conservation planning problem
+## formulate problem with all the pu and feature data
+prob <-
+  problem(x = pu_data_final, features = feature_data_w_constraints$name, cost_column = "cost") %>%
+  add_min_set_objective() %>%
+  add_manual_targets(manual_targets) %>%
+  add_binary_decisions() %>%
+  add_default_solver(gap = 0)
 ```
 
 ```{r}
@@ -176,7 +223,7 @@ raw_sol <- solve(prob)
 # since the solution contains a combination of grid cell-level and
 # seamount-level planning units, we need to do some post-processing
 # to identify which "real" planning units (i.e. raster pixels) were selected
-pu_ids <- unique(unlist(pu_data$id[which(raw_sol$solution_1 > 0.5)]))
+pu_ids <- unique(unlist(pu_data_final$id[which(raw_sol$solution_1 > 0.5)]))
 
 # we can now use these values to create a raster
 sol <- pu_raster * 0
@@ -185,7 +232,7 @@ names(sol) <- "solution"
 
 # plot solution
 plot(sol)
-plot(rasterToPolygons(seamount_raster), add=TRUE)
+plot(rasterToPolygons(seamount_raster, dissolve = TRUE), add=TRUE)
 ```
 
 ```{r}
@@ -193,11 +240,14 @@ plot(rasterToPolygons(seamount_raster), add=TRUE)
 
 features_stack <- stack(fish_stack, seamount_raster)
 
+names(features_stack) <- c(names(fish_stack), "seamounts")
+
 for(i in 1:nlayers(features_stack)){
   feature_temp <- features_stack[[i]]
   overlapping_cells <- feature_temp * sol
   plot(overlapping_cells)
   perc_representation <- 100*(cellStats(overlapping_cells, sum, na.rm = TRUE)/cellStats(feature_temp, sum, na.rm =TRUE))
+  print(names(feature_temp))
   print(perc_representation)
 }
 
