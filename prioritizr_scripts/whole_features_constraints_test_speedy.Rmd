@@ -5,6 +5,8 @@ date: "18/02/2022"
 output: html_document
 ---
 
+Trying to speed up the looping and reduce memory usage.
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 # load packages
@@ -139,16 +141,18 @@ feature_data <-
 feature_data
 ```
 
-```{r}
-## add in linear constraints to ensure that the solution won't select
-## spatially overlapping grid-cell level and seamount-level planning units
 
-#loop for creating all the constraints
-all_constraints <- list()
+```{r}
+
+start <- Sys.time()
+
+constraints_list <- list()
+
+index <- 1
 
 for (i in seq_len(nrow(pu_sm_data))) {
   print(paste0("Processing seamount ", i, " of ", nrow(pu_sm_data)))
-  constraints_pu_list <- list()
+  
   for (j in pu_sm_data$id[[i]]) {
     
     ### specify planning unit indices for constraints
@@ -157,23 +161,22 @@ for (i in seq_len(nrow(pu_sm_data))) {
     v[j] <- 1                       # specify grid cell-level planning unit
     
     #store the constraints vectors in a list
-    constraints_pu_list[[which(pu_sm_data$id[[i]] == j)]] <- v
+    constraints_list[[index]] <- v
+    index <- index+1
   }
-  all_constraints[[i]] <- constraints_pu_list
 }
 
-#don't need a lists of lists, so unlist to get a single list
-constraints_list <- unlist(all_constraints, recursive = FALSE)
+constraints <- bind_cols(constraints_list)
 
-#notes JF: This makes a constraint for each combination of seamount level planning unit and grid-cell level planning unit that overlaps with that seamount. The constraint says that the solution cannot have both representation of the seamount area in the seamount level planning unit AND the grid-cell level planning unit, i.e. you can't select both the seamount and then select grid-cells that overlap the seamount, only one or the other.
 
+
+Sys.time()-start
 ```
 
 ```{r}
 #add the constraints as features to the planning data
 
-pu_data_final <- constraints_list %>% 
-  as_tibble(.name_repair = "minimal") %>% 
+pu_data_final <- constraints %>% 
   setNames(sprintf("constraint_%d", seq.int(1:ncol(.)))) %>% 
   bind_cols(pu_data, .)
   
@@ -183,8 +186,9 @@ pu_data_final
 
 ```{r}
 # add constraints features to feature data which contains targets
-feature_data_w_constraints <- sapply(constraints_list, sum) %>% 
-  {tibble(id = seq(from = nrow(feature_data)+1, to = (nrow(feature_data) + length(.)), by = 1), total = .)} %>% 
+#just binding on rows with constraint names, total number of planning units which is always 2 - 1 inside the planning grid and 1 inside the seamount grid, and target will be 1 - only want 1 of those, not both otherwise we would be selecting the same cell twice
+
+feature_data_w_constraints <- tibble(id = seq(from = nrow(feature_data)+1, to = (nrow(feature_data) + length(constraints)), by = 1), total = 2) %>% 
   mutate(name = sprintf("constraint_%d", id-nrow(feature_data)), .after = id) %>% 
   mutate(rel_target = NA_real_,
          abs_target = 1) %>% 
@@ -198,8 +202,8 @@ feature_data_w_constraints
 #create targets dataframe for manual targets
 manual_targets <- tibble(feature = feature_data_w_constraints$name,
                          type = "absolute",
-                         sense = c(rep(">=", nrow(feature_data)), rep("<=", length(constraints_list))),
-                         target = c(pull(feature_data, abs_target), rep(1, length(constraints_list))))
+                         sense = c(rep(">=", nrow(feature_data)), rep("<=", length(constraints))),
+                         target = c(pull(feature_data, abs_target), rep(1, length(constraints))))
 
 manual_targets
 ```
