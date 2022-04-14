@@ -1,15 +1,3 @@
----
-title: "Whole patch features from Jeff"
-author: "Jason Flower"
-date: "18/02/2022"
-output: html_document
----
-
-Trying to speed up the looping and reduce memory usage.
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-# load packages
 library(prioritizr)
 library(terra)
 library(tibble)
@@ -20,35 +8,26 @@ set.seed(500)
 
 # define number of fish spp
 n_fish <- 4
-```
 
-```{r}
 # create a simple planning grid (assuming cost of each planning unit is equal)
 pu_raster <- raster(
   nrows = 200, ncols = 200,
   xmn = 0, xmx = 200, ymn = 0, ymx = 200, vals = 1
 )
-```
-```{r}
 # create data for fish species
 fish_stack <- raster::stack(lapply(seq_len(n_fish), function(x) {
   setValues(pu_raster, round(runif(ncell(pu_raster)) > 0.5))
 })) %>% setNames(paste0("fish_", seq_len(n_fish)))
 
-plot(fish_stack)                 
-```
+plot(fish_stack)     
 
-
-```{r}
 # create sea mount data
 seamount_raster <-
   st_multipoint(rbind(c(20,50), c(45, 70), c(65, 90), c(100, 100), c(120, 150), c(30, 160), c(10, 20), c(15, 80), c(20, 180))) %>%
   st_buffer(7) %>%
   as("Spatial") %>%
   rasterize(pu_raster, field = 1)
-```
 
-```{r}
 # create a separate layer for each sea mount
 seamount_stack <-
   seamount_raster %>%
@@ -62,9 +41,7 @@ seamount_stack <-
   setNames(paste0("seamount_", seq_len(raster::nlayers(.))))
 
 plot(seamount_stack)
-```
 
-```{r}
 # create grid-cell level planning unit data
 ## initialize data
 pu_grid_data <-
@@ -78,9 +55,7 @@ pu_grid_data <-
   mutate(seamount = 0)
 
 pu_grid_data
-```
 
-```{r}
 # create sea mount-level planning unit data
 pu_sm_data <- lapply(names(seamount_stack), function(i) {
   ## initialize data for planning unit that corresponds to i'th sea mount
@@ -98,8 +73,8 @@ pu_sm_data <- lapply(names(seamount_stack), function(i) {
     ## calculate total amount of each non-sea mount feature in i'th sea mount pu
     bind_cols(
       raster::as.data.frame(fish_stack * seamount_stack[[i]]) %>%
-      setNames(names(fish_stack)) %>%
-      dplyr::summarize_all(sum)
+        setNames(names(fish_stack)) %>%
+        dplyr::summarize_all(sum)
     ) %>%
     ## add data for i'th seamount
     mutate(
@@ -112,16 +87,12 @@ pu_sm_data <- lapply(names(seamount_stack), function(i) {
 }) %>% do.call(what = bind_rows) %>% as_tibble()
 
 pu_sm_data
-```
 
-```{r}
 # merge sea mount-level data and grid-cell level data togeather
 pu_data <- bind_rows(pu_grid_data, pu_sm_data)
 
 pu_data
-```
 
-```{r}
 # calculate feature data
 feature_data <-
   ## initialize data with the name and total amount of each feature
@@ -139,12 +110,9 @@ feature_data <-
   mutate(abs_target = rel_target * total)
 
 feature_data
-```
 
-
-```{r}
-
-start <- Sys.time()
+## add in linear constraints to ensure that the solution won't select
+## spatially overlapping grid-cell level and seamount-level planning units
 
 constraints_list <- list()
 
@@ -169,25 +137,15 @@ for (i in seq_len(nrow(pu_sm_data))) {
 constraints <- bind_cols(constraints_list, .name_repair = "unique")
 
 
-
-Sys.time()-start
-```
-
-```{r}
 #add the constraints as features to the planning data
 
-pu_data_final <- constraints %>% 
+pu_data_final <- constraints %>%  
   setNames(sprintf("constraint_%d", seq.int(1:ncol(.)))) %>% 
   bind_cols(pu_data, .)
-  
+
 pu_data_final
 
-```
-
-```{r}
 # add constraints features to feature data which contains targets
-#just binding on rows with constraint names, total number of planning units which is always 2 - 1 inside the planning grid and 1 inside the seamount grid, and target will be 1 - only want 1 of those, not both otherwise we would be selecting the same cell twice
-
 feature_data_w_constraints <- tibble(id = seq(from = nrow(feature_data)+1, to = (nrow(feature_data) + length(constraints)), by = 1), total = 2) %>% 
   mutate(name = sprintf("constraint_%d", id-nrow(feature_data)), .after = id) %>% 
   mutate(rel_target = NA_real_,
@@ -195,10 +153,7 @@ feature_data_w_constraints <- tibble(id = seq(from = nrow(feature_data)+1, to = 
   bind_rows(feature_data, .)
 
 feature_data_w_constraints
-  
-```
 
-```{r}
 #create targets dataframe for manual targets
 manual_targets <- tibble(feature = feature_data_w_constraints$name,
                          type = "absolute",
@@ -206,9 +161,7 @@ manual_targets <- tibble(feature = feature_data_w_constraints$name,
                          target = c(pull(feature_data, abs_target), rep(1, length(constraints))))
 
 manual_targets
-```
 
-```{r}
 # create a conservation planning problem
 ## formulate problem with all the pu and feature data
 prob <-
@@ -217,9 +170,6 @@ prob <-
   add_manual_targets(manual_targets) %>%
   add_binary_decisions() %>%
   add_default_solver(gap = 0)
-```
-
-```{r}
 
 # solve problem
 raw_sol <- solve(prob)
@@ -238,10 +188,6 @@ names(sol) <- "solution"
 plot(sol)
 #add seamount polygons to see if it is protecting whole seamounts
 plot(rasterToPolygons(seamount_raster, dissolve = TRUE), add=TRUE)
-```
-
-```{r}
-#check feature representation - can't do this using prioritizr functions due to overlapping areas
 
 features_stack <- stack(fish_stack, seamount_raster)
 
@@ -257,6 +203,3 @@ for(i in 1:nlayers(features_stack)){
   
   plot(overlapping_cells, main = paste0(names(features_stack[[i]]), ": ",sprintf("%0.1f",perc_representation), "%"))
 }
-
-```
-
