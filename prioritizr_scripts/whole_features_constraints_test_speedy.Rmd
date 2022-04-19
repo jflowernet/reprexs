@@ -209,6 +209,40 @@ manual_targets
 ```
 
 ```{r}
+#try creating boundary matrix based on Jeff's recommendation of creating an sf object with
+
+
+pu_grid_sf <- rasterToPolygons(pu_raster) %>% 
+  st_as_sf() %>% 
+  mutate(id = 1:nrow(.)) %>% 
+  select(-layer)
+
+seamounts_sf <- rasterToPolygons(seamount_raster, dissolve = TRUE) %>% 
+  st_as_sf() %>% 
+  st_cast(to = "POLYGON") %>%
+  select(-layer) %>% 
+  #reversing order to get the same order as terra::patches() uses to number patches (starting top left working along each row left to right)
+  {.[rev(rownames(.)),]}
+
+
+
+#check that seamounts are numbered in the right order
+mypal <- tmaptools::get_brewer_pal("Set1", n = 9)
+
+plot(rownames_to_column(seamounts_sf)["rowname"], pal = mypal)
+
+seamount_raster %>% 
+  as("SpatRaster") %>% 
+  terra::patches() %>% 
+  plot(col = mypal)
+
+pu_sf <- bind_rows(pu_grid_sf, seamounts_sf)
+
+bnd_mat <- boundary_matrix(pu_sf)
+```
+
+
+```{r}
 # create a conservation planning problem
 ## formulate problem with all the pu and feature data
 prob <-
@@ -216,7 +250,8 @@ prob <-
   add_min_set_objective() %>%
   add_manual_targets(manual_targets) %>%
   add_binary_decisions() %>%
-  add_default_solver(gap = 0)
+  add_default_solver(gap = 0.1) %>% 
+  add_boundary_penalties(penalty = 0.001, data = bnd_mat)
 ```
 
 ```{r}
