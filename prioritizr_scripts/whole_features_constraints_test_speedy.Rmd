@@ -209,12 +209,11 @@ manual_targets
 ```
 
 ```{r}
-#try creating boundary matrix based on Jeff's recommendation of creating an sf object with
+#try creating boundary matrix based on Jeff's recommendation of creating an sf object from all pu data
 
 
 pu_grid_sf <- rasterToPolygons(pu_raster) %>% 
   st_as_sf() %>% 
-  mutate(id = 1:nrow(.)) %>% 
   select(-layer)
 
 seamounts_sf <- rasterToPolygons(seamount_raster, dissolve = TRUE) %>% 
@@ -251,7 +250,7 @@ prob <-
   add_manual_targets(manual_targets) %>%
   add_binary_decisions() %>%
   add_default_solver(gap = 0.1) %>% 
-  add_boundary_penalties(penalty = 0.001, data = bnd_mat)
+  add_boundary_penalties(penalty = 0.5, data = bnd_mat)
 ```
 
 ```{r}
