@@ -114,5 +114,7 @@ pu_sf <-
       dplyr::select(-layer)
   )
 
-boundary_matrix(pu_sf)
+bnd_mat <- boundary_matrix(pu_sf)
+
+saveRDS(bnd_mat, "data/boundary_matrix_7225.rds")
 
