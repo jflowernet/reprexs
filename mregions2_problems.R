@@ -2,7 +2,7 @@
 mregions2::mrp_get("eez", cql_filter = "territory1 = 'Azores'")
 
 library(mregions2)
-azores <- mrp_get("eez", cql_filter = "territory1 = 'Fiji'")
+azores <- mrp_get("eez", cql_filter = "territory1 = 'Azores'")
 
 
 plot(azores[1])
