@@ -1,5 +1,5 @@
 library(terra)
-#> terra 1.7.71
+
 set.seed(0)
 r <- rast(nrows = 10, ncols = 10)
 values(r) <- sample(3, ncell(r), replace = TRUE)
@@ -12,4 +12,3 @@ class(levels(r))
 r2 <- c(r,r)
 
 levels(r2)
-
