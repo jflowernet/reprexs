@@ -18,3 +18,13 @@ plot(v2, "ID_1", alpha = 0.8)
 v2_agg <- aggregate(v2, by = "ID_1", fun = "sum") 
   
 plot(v2_agg, "ID_1", alpha = 0.8)
+
+#response from Robert 
+
+u <- union(v2)
+s <- rowSums(values(u) * v2$ID_1)
+u$sum <- s
+# or
+values(u) <- data.frame(sum=s)
+
+plot(u, "sum")
