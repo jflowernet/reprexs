@@ -8,6 +8,10 @@ south_america <- rnaturalearth::ne_countries(continent = "South America", return
 
 bbox_terra <- ext(south_america)
 
+tm_shape(vect(World)) + 
+  tm_polygons("HPI") +
+  tm_crs("auto", bbox = bbox_terra)
+
 bbox_sf <- st_bbox(st_as_sf(south_america))
 
 #works
@@ -21,5 +25,6 @@ tm_shape(vect(World), bbox = bbox_terra) +
 #works
 tm_shape(vect(World), bbox = st_bbox(bbox_terra)) + 
   tm_polygons("HPI")
+
 
 
